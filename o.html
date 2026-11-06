@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Course Walker</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+  :root { --bar:#1e2a22; --ink:#f3f1e7; --accent:#f08a00; --ok:#2e9e4f; --pt:#3b6fd6; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bar); color: var(--ink); }
+  #app { display: flex; flex-direction: column; height: 100%; height: 100dvh; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); background: var(--bar); align-items: center; }
+  .toolbar button, .toolbar label.btn, dialog button {
+    font: inherit; font-size: 14px; color: var(--ink); background: #33463a; border: 1px solid #4d6556;
+    border-radius: 8px; padding: 8px 12px; cursor: pointer; user-select: none;
+  }
+  button:disabled { opacity: .5; }
+  button.primary { background: var(--accent) !important; border-color: var(--accent) !important; color: #1b1200 !important; font-weight: 600; }
+  .toolbar input[type=file] { display: none; }
+  .toolbar input[type=text], dialog select, #cname {
+    font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 8px; border: 1px solid #4d6556; background: #121a15; color: var(--ink);
+  }
+  #q { flex: 1 1 120px; min-width: 100px; }
+  #mapwrap { position: relative; flex: 1; min-height: 0; }
+  #map { position: absolute; inset: 0; background: #dfe6d8; }
+  #panel { padding: 10px 14px; padding-bottom: max(10px, env(safe-area-inset-bottom)); background: var(--bar); min-height: 74px; display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+  #target { font-size: 18px; font-weight: 600; }
+  #status { font-size: 13px; opacity: .85; margin-top: 3px; }
+  #helpinfo { font-size: 15px; color: #ffd18a; margin-top: 4px; font-weight: 600; }
+  #clock { font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 700; white-space: nowrap; color: #ffd18a; }
+  #compass { position: absolute; top: 10px; right: 10px; width: 92px; z-index: 1000; text-align: center; pointer-events: none; }
+  #compass svg { width: 92px; height: 92px; filter: drop-shadow(0 1px 3px rgba(0,0,0,.45)); }
+  #hdg { font-size: 12px; font-weight: 700; color: #111; background: rgba(255,255,255,.85); border-radius: 8px; display: inline-block; padding: 1px 7px; margin-top: 2px; }
+  #toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1100; background: rgba(20,20,20,.92); color: #fff;
+    padding: 10px 16px; border-radius: 10px; font-size: 15px; max-width: 88%; text-align: center; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  .ptlabel { background: rgba(255,255,255,.88); border: 1px solid #555; border-radius: 6px; color: #111; font-size: 12px; padding: 1px 6px; box-shadow: none; }
+  .ptlabel::before { display: none; }
+  .hidden { display: none !important; }
+
+  /* create mode */
+  #cross { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; z-index: 900; pointer-events: none; }
+  #cross::before, #cross::after { content: ''; position: absolute; background: #c62828; box-shadow: 0 0 0 1px #fff; }
+  #cross::before { left: 13px; top: 0; width: 2px; height: 28px; }
+  #cross::after { top: 13px; left: 0; height: 2px; width: 28px; }
+  .cm { width: 26px; height: 26px; border-radius: 50%; background: #f08a00; color: #1b1200; border: 3px solid #7a4300; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  #cpanel { background: var(--bar); padding: 8px 12px; padding-bottom: max(8px, env(safe-area-inset-bottom)); max-height: 40vh; display: flex; flex-direction: column; gap: 6px; }
+  #cname { width: 100%; }
+  #clist { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .row { display: flex; align-items: center; gap: 6px; background: #26352b; border-radius: 8px; padding: 4px 6px; }
+  .row .n { width: 26px; text-align: center; font-weight: 700; color: #ffd18a; }
+  .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .row button { padding: 4px 9px; font-size: 14px; background: #33463a; color: var(--ink); border: 1px solid #4d6556; border-radius: 6px; }
+  .hint { font-size: 12px; opacity: .75; }
+
+  /* dialogs */
+  dialog { background: #1e2a22; color: var(--ink); border: 1px solid #4d6556; border-radius: 12px; max-width: min(92vw, 520px); width: 100%; padding: 16px; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h3 { margin: 0 0 10px; }
+  dialog label { display: block; font-size: 13px; margin: 10px 0 4px; opacity: .9; }
+  dialog select { width: 100%; }
+  dialog .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  dialog progress { width: 100%; margin-top: 10px; }
+  table.splits { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+  table.splits th, table.splits td { padding: 5px 6px; text-align: right; border-bottom: 1px solid #33463a; }
+  table.splits th:nth-child(1), table.splits td:nth-child(1), table.splits th:nth-child(2), table.splits td:nth-child(2) { text-align: left; }
+  table.splits tr.tot td { font-weight: 700; color: #ffd18a; border-top: 2px solid #4d6556; }
+  table.splits tr.skip td { opacity: .55; }
+  #splitsBody { max-height: 60vh; overflow: auto; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- play toolbar -->
+  <div id="toolbar" class="toolbar">
+    <label class="btn">📂 Load<input id="file" type="file" accept=".json,application/json"></label>
+    <button id="sampleBtn">Sample</button>
+    <button id="startBtn" class="primary">▶ Start</button>
+    <button id="helpBtn">🆘 Help</button>
+    <button id="splitsBtn">📊 Splits</button>
+    <button id="skipBtn">Skip ⏭</button>
+    <button id="resetBtn">Reset</button>
+    <button id="offBtn">📥 Offline map</button>
+    <button id="createBtn">✏️ Create</button>
+  </div>
+
+  <!-- create toolbar -->
+  <div id="ctoolbar" class="toolbar hidden">
+    <input id="q" type="text" placeholder="Find a place…" enterkeyhint="search">
+    <button id="qGo">Go</button>
+    <button id="meBtn">📍 Me</button>
+    <button id="dropBtn">📌 Drop at me</button>
+    <button id="crossBtn">➕ At crosshair</button>
+    <button id="coffBtn">📥 Offline map</button>
+    <button id="saveBtn" class="primary">💾 Save JSON</button>
+    <button id="shareBtn">📤 Share</button>
+    <button id="useBtn">✔ Use course</button>
+    <button id="exitBtn">✖ Exit</button>
+  </div>
+
+  <div id="mapwrap">
+    <div id="map"></div>
+    <div id="cross" class="hidden"></div>
+    <div id="compass" aria-label="Compass">
+      <svg viewBox="0 0 100 100">
+        <path d="M50 1 L44 11 L56 11 Z" fill="#c62828" stroke="#fff" stroke-width="1"/>
+        <g id="rose">
+          <circle cx="50" cy="52" r="38" fill="rgba(255,255,255,.88)" stroke="#333" stroke-width="2"/>
+          <g id="ticks" stroke="#555" stroke-width="1"></g>
+          <path d="M50 18 L57 52 L43 52 Z" fill="#d32f2f"/>
+          <path d="M50 86 L57 52 L43 52 Z" fill="#455a64"/>
+          <circle cx="50" cy="52" r="3" fill="#222"/>
+          <text x="50" y="30" font-size="11" font-weight="700" text-anchor="middle" fill="#b71c1c">N</text>
+          <text x="82" y="56" font-size="9" font-weight="700" text-anchor="middle" fill="#222">E</text>
+          <text x="50" y="80" font-size="9" font-weight="700" text-anchor="middle" fill="#222">S</text>
+          <text x="18" y="56" font-size="9" font-weight="700" text-anchor="middle" fill="#222">W</text>
+          <g id="tgt" style="display:none">
+            <path d="M50 8 L45 20 L55 20 Z" fill="#f08a00" stroke="#222" stroke-width="1"/>
+          </g>
+        </g>
+      </svg>
+      <div id="hdg">N-up</div>
+    </div>
+    <div id="toast"></div>
+  </div>
+
+  <!-- play panel -->
+  <div id="panel">
+    <div>
+      <div id="target">No course loaded</div>
+      <div id="status">Load a JSON course file (or tap Sample).</div>
+      <div id="helpinfo"></div>
+    </div>
+    <div id="clock" class="hidden">0:00</div>
+  </div>
+
+  <!-- create panel -->
+  <div id="cpanel" class="hidden">
+    <input id="cname" type="text" placeholder="Course name">
+    <div class="hint">Tap the map (or use the crosshair / “Drop at me”) to add points in order. Drag a marker to move it.</div>
+    <div id="clist"></div>
+  </div>
+</div>
+
+<!-- splits dialog -->
+<dialog id="splitsDlg">
+  <h3 id="splitsTitle">Splits</h3>
+  <div id="splitsBody"></div>
+  <div class="btns">
+    <button id="csvBtn" class="primary">⬇ Save CSV</button>
+    <button id="splitsClose">Close</button>
+  </div>
+</dialog>
+
+<!-- offline dialog -->
+<dialog id="offDlg">
+  <h3>Offline map</h3>
+  <div class="hint" id="offState"></div>
+  <label for="offArea">Area</label>
+  <select id="offArea">
+    <option value="course">Around the course points</option>
+    <option value="view">Current map view</option>
+  </select>
+  <label for="offPad">Margin around points</label>
+  <select id="offPad">
+    <option value="250">250 m</option>
+    <option value="500" selected>500 m</option>
+    <option value="1000">1 km</option>
+    <option value="2000">2 km</option>
+  </select>
+  <label for="offZoom">Most detailed zoom</label>
+  <select id="offZoom">
+    <option value="15">15 (coarse)</option>
+    <option value="16" selected>16 (good)</option>
+    <option value="17">17 (finest, biggest)</option>
+  </select>
+  <div id="offEst" style="margin-top:12px;font-weight:600"></div>
+  <progress id="offProg" value="0" max="1" class="hidden"></progress>
+  <div id="offMsg" class="hint"></div>
+  <div class="btns">
+    <button id="offGo" class="primary">⬇ Download</button>
+    <button id="offClear">Clear saved tiles</button>
+    <button id="offClose">Close</button>
+  </div>
+  <div class="hint" style="margin-top:10px">Tiles are free OpenTopoMap tiles. Please keep downloads small (a few thousand tiles at most).</div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const ARRIVE_M = 10;
+  const HELP_SHOW_MS = 20000;
+  const TILE_URL = (z, x, y) => `https://tile.opentopomap.org/${z}/${x}/${y}.png`;
+  const TILE_CACHE = 'cw-tiles-v1';   // must match sw.js
+  const MAX_TILES = 3000;
+
+  const SAMPLE = {
+    name: 'Sample loop',
+    points: [
+      { id: 1, name: 'Start - Visitor Center', lat: 38.99815, lon: -77.25380 },
+      { id: 2, name: 'Old Patowmack Canal',    lat: 38.99890, lon: -77.25220 },
+      { id: 3, name: 'Overlook 1',             lat: 38.99760, lon: -77.25050 },
+      { id: 4, name: 'Ridge Trail Junction',   lat: 38.99600, lon: -77.25200 },
+      { id: 5, name: 'Finish',                 lat: 38.99700, lon: -77.25400 }
+    ]
+  };
+
+  // ---------- helpers ----------
+  const $ = id => document.getElementById(id);
+  const R = 6371008.8;
+  const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+  function haversine(lat1, lon1, lat2, lon2) {
+    const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+  function bearing(lat1, lon1, lat2, lon2) {
+    const y = Math.sin(rad(lon2 - lon1)) * Math.cos(rad(lat2));
+    const x = Math.cos(rad(lat1)) * Math.sin(rad(lat2)) - Math.sin(rad(lat1)) * Math.cos(rad(lat2)) * Math.cos(rad(lon2 - lon1));
+    return (deg(Math.atan2(y, x)) + 360) % 360;
+  }
+  const CARD = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  const cardinal = b => CARD[Math.round(b / 22.5) % 16];
+  const pad2 = n => String(n).padStart(2, '0');
+  function fmt(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h ? `${h}:${pad2(m)}:${pad2(sec)}` : `${m}:${pad2(sec)}`;
+  }
+  let toastTimer;
+  function toast(msg, ms = 3200) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function hash(str) { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return String(h >>> 0); }
+  const slug = s => (String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'course');
+  function downloadBlob(text, filename, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+  // ---------- service worker (offline app + tiles) ----------
+  let swReady = false;
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').then(() => { swReady = true; }).catch(() => {});
+  }
+
+  // ---------- compass drawing ----------
+  (function drawTicks() {
+    let s = '';
+    for (let a = 30; a < 360; a += 30) if (a % 90) s += `<line x1="50" y1="14" x2="50" y2="19" transform="rotate(${a} 50 52)"/>`;
+    $('ticks').innerHTML = s;
+  })();
+  const setRose = h => $('rose').setAttribute('transform', `rotate(${-h} 50 52)`);
+
+  // ---------- map ----------
+  const map = L.map('map', { zoomControl: true, maxZoom: 17 }).setView([39, -98], 4);
+  L.tileLayer(TILE_URL('{z}', '{x}', '{y}'), {
+    maxZoom: 17, maxNativeZoom: 17,
+    attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors, SRTM | Style © <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)'
+  }).addTo(map);
+  const courseLayer = L.layerGroup().addTo(map);
+  const helpLayer = L.layerGroup().addTo(map);
+  const createLayer = L.layerGroup();
+
+  // ---------- course + run state ----------
+  let mode = 'play';
+  let course = null, courseName = '', courseKey = '';
+  let markers = [];
+  let run = { startedAt: null, events: [] };      // events: {id, t, skipped?}
+  const cur = () => run.events.length;
+  const finished = () => course && cur() >= course.length;
+
+  function saveRun() { if (course) lsSet('cw-run:' + courseKey, JSON.stringify(run)); }
+  function loadRun() {
+    try {
+      const r = JSON.parse(lsGet('cw-run:' + courseKey));
+      if (r && Array.isArray(r.events)) return { startedAt: r.startedAt || null, events: r.events.slice(0, course.length), finishedAt: r.finishedAt };
+    } catch (e) {}
+    return { startedAt: null, events: [] };
+  }
+
+  function parseCourse(json) {
+    const arr = Array.isArray(json) ? json : (json.points || json.waypoints || json.checkpoints);
+    if (!Array.isArray(arr) || !arr.length) throw new Error('No points array found in JSON.');
+    const pts = arr.map((p, i) => {
+      const id = Number(p.id ?? p.number ?? p.order);
+      const lat = Number(p.lat ?? p.latitude);
+      const lon = Number(p.lon ?? p.lng ?? p.long ?? p.longitude);
+      if (!Number.isFinite(id)) throw new Error(`Point #${i + 1} has no numeric id.`);
+      if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lon) || Math.abs(lon) > 180)
+        throw new Error(`Point id ${id} has invalid lat/long.`);
+      return { id, name: String(p.name ?? `Point ${id}`), lat, lon };
+    });
+    pts.sort((a, b) => a.id - b.id);
+    for (let i = 1; i < pts.length; i++) if (pts[i].id === pts[i - 1].id) throw new Error(`Duplicate id ${pts[i].id}.`);
+    return { name: Array.isArray(json) ? '' : String(json.name || ''), pts };
+  }
+
+  function setCourse(name, pts, fit = true) {
+    course = pts; courseName = name || '';
+    courseKey = hash(JSON.stringify(pts));
+    run = loadRun();
+    if (started && !run.startedAt) { run.startedAt = Date.now(); saveRun(); }
+    lsSet('cw-last', JSON.stringify({ name: courseName, points: pts }));
+    clearHelp();
+    renderCourse();
+    updatePanel();
+    if (fit) map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])), { padding: [50, 50], maxZoom: 16 });
+  }
+
+  function renderCourse() {
+    courseLayer.clearLayers();
+    markers = [];
+    L.polyline(course.map(p => [p.lat, p.lon]), { color: '#333', weight: 2, opacity: .7, dashArray: '4 7', interactive: false }).addTo(courseLayer);
+    course.forEach(p => {
+      L.circle([p.lat, p.lon], { radius: ARRIVE_M, weight: 1, color: '#222', fillOpacity: .12, interactive: false }).addTo(courseLayer);
+      const m = L.circleMarker([p.lat, p.lon], { radius: 11, weight: 3 }).addTo(courseLayer);
+      m.bindTooltip(`<b>${p.id}</b> ${esc(p.name)}`, { permanent: true, direction: 'right', offset: [12, 0], className: 'ptlabel' });
+      markers.push(m);
+    });
+    restyle();
+  }
+
+  function restyle() {
+    const idx = cur();
+    markers.forEach((m, i) => {
+      const skipped = run.events[i] && run.events[i].skipped;
+      if (i < idx) { m.setStyle(skipped ? { color: '#555', fillColor: '#999', fillOpacity: .8 } : { color: '#1b5e30', fillColor: '#2e9e4f', fillOpacity: .9 }); m.setRadius(10); }
+      else if (i === idx) { m.setStyle({ color: '#7a4300', fillColor: '#f08a00', fillOpacity: .95 }); m.setRadius(14); }
+      else { m.setStyle({ color: '#1c3a7a', fillColor: '#3b6fd6', fillOpacity: .85 }); m.setRadius(10); }
+    });
+    if (markers[idx]) markers[idx].bringToFront();
+  }
+
+  function updatePanel() {
+    const clock = $('clock');
+    if (!course) { $('target').textContent = 'No course loaded'; $('status').textContent = 'Load a JSON course file (or tap Sample).'; clock.classList.add('hidden'); return; }
+    if (run.startedAt) clock.classList.remove('hidden'); else clock.classList.add('hidden');
+    updateClock();
+    const sb = $('startBtn');
+    if (finished()) { sb.disabled = true; sb.textContent = '🏁 Done'; }
+    else if (started) { sb.disabled = true; sb.textContent = '● Running'; }
+    else { sb.disabled = false; sb.textContent = run.startedAt ? '▶ Resume' : '▶ Start'; }
+    if (finished()) {
+      $('target').textContent = '🏁 Course complete!';
+      $('status').textContent = `${course.length} points · tap Splits for your times.`;
+      return;
+    }
+    const p = course[cur()];
+    $('target').textContent = `Next: #${p.id} · ${p.name}  (${cur() + 1}/${course.length})`;
+    $('status').textContent = started
+      ? 'GPS is listening quietly. Tap Help to see where you are.'
+      : (run.startedAt ? 'Tap Resume to turn GPS and compass back on.' : 'Tap Start to enable GPS and compass and start the clock.');
+  }
+
+  function updateClock() {
+    if (!run.startedAt) return;
+    const end = finished() ? (run.finishedAt || run.events[run.events.length - 1].t) : Date.now();
+    $('clock').textContent = fmt(end - run.startedAt);
+  }
+  setInterval(() => { if (mode === 'play' && course && run.startedAt && !finished()) updateClock(); }, 1000);
+
+  // ---------- recording arrivals / skips ----------
+  function record(skipped) {
+    const p = course[cur()];
+    const now = Date.now();
+    run.events.push(skipped ? { id: p.id, t: now, skipped: true } : { id: p.id, t: now });
+    if (finished()) run.finishedAt = now;
+    saveRun(); restyle(); updatePanel(); clearHelp();
+    if (!skipped && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    if (finished()) {
+      if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 500]);
+      toast('🏁 Course complete!', 4000);
+      setTimeout(showSplits, 600);
+    } else {
+      toast(skipped ? `Skipped #${p.id} ${p.name}` : `✔ Reached #${p.id} ${p.name}`, 4000);
+    }
+  }
+  function checkArrival(pos) {
+    if (!course || finished() || !run.startedAt) return;
+    const p = course[cur()];
+    if (haversine(pos.coords.latitude, pos.coords.longitude, p.lat, p.lon) <= ARRIVE_M) record(false);
+  }
+
+  // ---------- splits ----------
+  function splitRows() {
+    const rows = [];
+    let prev = run.startedAt;
+    run.events.forEach((ev, i) => {
+      const p = course[i];
+      if (ev.skipped) rows.push({ id: p.id, name: p.name, skipped: true });
+      else {
+        const leg = prev ? ev.t - prev : null;
+        const cum = run.startedAt ? ev.t - run.startedAt : null;
+        rows.push({ id: p.id, name: p.name, leg, cum });
+        prev = ev.t;
+      }
+    });
+    for (let i = run.events.length; i < course.length; i++) rows.push({ id: course[i].id, name: course[i].name, pending: true });
+    return rows;
+  }
+  function showSplits() {
+    if (!course) { toast('Load a course first.'); return; }
+    const rows = splitRows();
+    const body = $('splitsBody');
+    body.innerHTML = '';
+    const tbl = document.createElement('table'); tbl.className = 'splits';
+    tbl.innerHTML = '<tr><th>#</th><th>Point</th><th>Leg</th><th>Total</th></tr>';
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      if (r.skipped) tr.className = 'skip';
+      const cells = [r.id, r.name + (r.skipped ? ' (skipped)' : ''), r.skipped || r.pending ? '—' : (r.leg == null ? '—' : fmt(r.leg)), r.skipped || r.pending ? '—' : (r.cum == null ? '—' : fmt(r.cum))];
+      cells.forEach(c => { const td = document.createElement('td'); td.textContent = c; tr.appendChild(td); });
+      tbl.appendChild(tr);
+    });
+    if (run.startedAt && run.events.length) {
+      const end = finished() ? (run.finishedAt || run.events[run.events.length - 1].t) : Date.now();
+      const tr = document.createElement('tr'); tr.className = 'tot';
+      ['', finished() ? 'Total time' : 'Elapsed so far', '', fmt(end - run.startedAt)].forEach(c => { const td = document.createElement('td'); td.textContent = c; tr.appendChild(td); });
+      tbl.appendChild(tr);
+    }
+    body.appendChild(tbl);
+    $('splitsTitle').textContent = (courseName || 'Course') + ' — splits';
+    if (!$('splitsDlg').open) $('splitsDlg').showModal();
+  }
+  function splitsCSV() {
+    const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+    const lines = ['id,name,status,leg_seconds,cumulative_seconds,leg,cumulative'];
+    splitRows().forEach(r => {
+      if (r.pending) lines.push([r.id, q(r.name), 'pending', '', '', '', ''].join(','));
+      else if (r.skipped) lines.push([r.id, q(r.name), 'skipped', '', '', '', ''].join(','));
+      else lines.push([r.id, q(r.name), 'reached', r.leg == null ? '' : Math.round(r.leg / 1000), r.cum == null ? '' : Math.round(r.cum / 1000), r.leg == null ? '' : fmt(r.leg), r.cum == null ? '' : fmt(r.cum)].join(','));
+    });
+    return lines.join('\n') + '\n';
+  }
+
+  // ---------- compass sensor ----------
+  let compassOn = false;
+  function onOrient(e) {
+    let h = null;
+    if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;
+    else if (e.absolute && e.alpha != null) h = (360 - e.alpha) % 360;
+    if (h == null) return;
+    h = (h + ((screen.orientation && screen.orientation.angle) || 0) + 360) % 360;
+    setRose(h);
+    $('hdg').textContent = `${Math.round(h)}° ${cardinal(h)}`;
+  }
+  async function enableCompass() {
+    if (compassOn || typeof DeviceOrientationEvent === 'undefined') return;
+    try {
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const r = await DeviceOrientationEvent.requestPermission();
+        if (r !== 'granted') { toast('Compass permission denied.'); return; }
+      }
+      window.addEventListener('deviceorientationabsolute', onOrient, true);
+      window.addEventListener('deviceorientation', onOrient, true);
+      compassOn = true;
+    } catch (err) { toast('Compass unavailable on this device.'); }
+  }
+
+  // ---------- GPS (silent watch) ----------
+  let started = false, watchId = null, lastPos = null, wakeLock = null;
+  async function requestWake() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+  document.addEventListener('visibilitychange', () => { if (started && document.visibilityState === 'visible') requestWake(); });
+
+  async function start() {
+    if (started) return;
+    if (!course) { toast('Load a course first.'); return; }
+    if (finished()) { toast('Course already complete. Use Reset to run it again.'); return; }
+    started = true;
+    if (!run.startedAt) { run.startedAt = Date.now(); saveRun(); }
+    updatePanel();
+    await enableCompass();
+    if (!('geolocation' in navigator)) { toast('Geolocation not supported.'); return; }
+    watchId = navigator.geolocation.watchPosition(
+      pos => { lastPos = pos; checkArrival(pos); },
+      err => {
+        if (err.code === 1) {
+          toast('Location permission denied.', 5000);
+          started = false; watchId = null; updatePanel();
+        } else $('status').textContent = 'Waiting for GPS signal…';
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 }
+    );
+    requestWake();
+  }
+
+  // ---------- Help ----------
+  let helpTimer = null;
+  function clearHelp() {
+    clearTimeout(helpTimer);
+    helpLayer.clearLayers();
+    $('helpinfo').textContent = '';
+    $('tgt').style.display = 'none';
+  }
+  function getFix() {
+    return new Promise((resolve, reject) => {
+      if (lastPos && Date.now() - lastPos.timestamp < 15000) return resolve(lastPos);
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    });
+  }
+  async function help() {
+    if (!course) { toast('Load a course first.'); return; }
+    if (finished()) { toast('Course already complete.'); return; }
+    if (!started) start();
+    $('helpBtn').disabled = true;
+    toast('Getting your position…', 2000);
+    try {
+      const pos = await getFix();
+      lastPos = pos;
+      checkArrival(pos);
+      if (!finished()) showHelp(pos);
+    } catch (e) {
+      toast('Could not get a GPS fix. Try again in the open.', 4500);
+    } finally { $('helpBtn').disabled = false; }
+  }
+  function showHelp(pos) {
+    clearHelp();
+    const c = pos.coords, me = [c.latitude, c.longitude], t = course[cur()];
+    const d = haversine(c.latitude, c.longitude, t.lat, t.lon);
+    const b = bearing(c.latitude, c.longitude, t.lat, t.lon);
+    L.circle(me, { radius: c.accuracy, weight: 1, color: '#0b57d0', fillOpacity: .1, interactive: false }).addTo(helpLayer);
+    L.circleMarker(me, { radius: 8, color: '#fff', weight: 3, fillColor: '#0b57d0', fillOpacity: 1 }).bindTooltip('You', { permanent: true, direction: 'left', className: 'ptlabel' }).addTo(helpLayer);
+    L.polyline([me, [t.lat, t.lon]], { color: '#f08a00', weight: 3, dashArray: '6 6', interactive: false }).addTo(helpLayer);
+    map.fitBounds(L.latLngBounds([me, [t.lat, t.lon]]), { padding: [70, 70], maxZoom: 17 });
+    const dist = d >= 1000 ? (d / 1000).toFixed(2) + ' km' : Math.round(d) + ' m';
+    $('helpinfo').textContent = `${dist} to #${t.id} · head ${cardinal(b)} (${Math.round(b)}°) · GPS ±${Math.round(c.accuracy)} m`;
+    $('tgt').setAttribute('transform', `rotate(${b} 50 52)`);
+    $('tgt').style.display = '';
+    helpTimer = setTimeout(clearHelp, HELP_SHOW_MS);
+  }
+
+  // ---------- offline tiles ----------
+  const lon2x = (lon, z) => Math.floor((lon + 180) / 360 * 2 ** z);
+  function lat2y(lat, z) {
+    const r = rad(Math.max(-85.0511, Math.min(85.0511, lat)));
+    return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z);
+  }
+  function padBounds(b, m) {
+    const lat = b.getCenter().lat;
+    const dLat = m / 111320, dLon = m / (111320 * Math.max(.1, Math.cos(rad(lat))));
+    return L.latLngBounds([b.getSouth() - dLat, b.getWest() - dLon], [b.getNorth() + dLat, b.getEast() + dLon]);
+  }
+  const currentPts = () => (mode === 'create' ? draft : course);
+  function tileSpec() {
+    const maxZ = +$('offZoom').value, padM = +$('offPad').value;
+    const pts = currentPts();
+    const useCourse = $('offArea').value === 'course' && pts && pts.length;
+    let b = useCourse ? L.latLngBounds(pts.map(p => [p.lat, p.lon])) : map.getBounds();
+    b = padBounds(b, useCourse ? padM : 0);
+    let minZ = useCourse ? Math.max(10, maxZ - 5) : Math.floor(map.getZoom());
+    minZ = Math.max(1, Math.min(minZ, maxZ));
+    return { b, minZ, maxZ };
+  }
+  function tileRanges(spec) {
+    const out = [];
+    for (let z = spec.minZ; z <= spec.maxZ; z++) {
+      const max = 2 ** z - 1;
+      out.push({
+        z,
+        x0: Math.max(0, lon2x(spec.b.getWest(), z)), x1: Math.min(max, lon2x(spec.b.getEast(), z)),
+        y0: Math.max(0, lat2y(spec.b.getNorth(), z)), y1: Math.min(max, lat2y(spec.b.getSouth(), z))
+      });
+    }
+    return out;
+  }
+  const countTiles = spec => tileRanges(spec).reduce((n, r) => n + Math.max(0, r.x1 - r.x0 + 1) * Math.max(0, r.y1 - r.y0 + 1), 0);
+  function listTiles(spec) {
+    const l = [];
+    tileRanges(spec).forEach(r => { for (let x = r.x0; x <= r.x1; x++) for (let y = r.y0; y <= r.y1; y++) l.push([r.z, x, y]); });
+    return l;
+  }
+
+  let cancelDl = false, downloading = false;
+  async function cachedCount() {
+    try { return (await (await caches.open(TILE_CACHE)).keys()).length; } catch (e) { return 0; }
+  }
+  async function refreshOffline() {
+    const hasCache = 'caches' in window;
+    const pts = currentPts();
+    const hasCourse = pts && pts.length;
+    $('offArea').querySelector('option[value=course]').disabled = !hasCourse;
+    if (!hasCourse) $('offArea').value = 'view';
+    $('offPad').disabled = $('offArea').value !== 'course';
+    if (!hasCache) {
+      $('offState').textContent = 'Offline storage is not available here. Serve this page over HTTPS to use it.';
+      $('offGo').disabled = true; $('offEst').textContent = ''; return;
+    }
+    const n = countTiles(tileSpec());
+    $('offEst').textContent = n > MAX_TILES
+      ? `${n.toLocaleString()} tiles — too many (limit ${MAX_TILES.toLocaleString()}). Lower the zoom or shrink the area.`
+      : `${n.toLocaleString()} tiles ≈ ${Math.max(1, Math.round(n * 0.03))} MB`;
+    $('offGo').disabled = downloading || n === 0 || n > MAX_TILES;
+    const saved = await cachedCount();
+    $('offState').textContent = `Saved tiles on this device: ${saved.toLocaleString()}. App itself works offline: ${swReady || (navigator.serviceWorker && navigator.serviceWorker.controller) ? 'yes' : 'not yet (needs HTTPS, reload once)'}.`;
+  }
+  function openOffline() { $('offProg').classList.add('hidden'); $('offMsg').textContent = ''; $('offDlg').showModal(); refreshOffline(); }
+
+  async function downloadTiles() {
+    const list = listTiles(tileSpec());
+    if (!list.length || list.length > MAX_TILES) return;
+    downloading = true; cancelDl = false;
+    $('offGo').disabled = true;
+    $('offGo').textContent = '⏳ Downloading…';
+    $('offProg').classList.remove('hidden'); $('offProg').max = list.length; $('offProg').value = 0;
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    const cache = await caches.open(TILE_CACHE);
+    let i = 0, done = 0, fail = 0;
+    async function worker() {
+      while (!cancelDl) {
+        const k = i++; if (k >= list.length) return;
+        const url = TILE_URL(...list[k]);
+        try {
+          if (!(await cache.match(url))) {
+            let res;
+            try { res = await fetch(url, { mode: 'cors' }); if (!res.ok) throw new Error('status'); }
+            catch (e) { res = await fetch(url, { mode: 'no-cors' }); }
+            if (res.ok || res.type === 'opaque') await cache.put(url, res); else fail++;
+          }
+        } catch (e) { fail++; }
+        done++;
+        $('offProg').value = done;
+        $('offMsg').textContent = `${done} / ${list.length}${fail ? ` (${fail} failed)` : ''}`;
+      }
+    }
+    await Promise.all(Array.from({ length: 4 }, worker));
+    downloading = false;
+    $('offGo').textContent = '⬇ Download';
+    $('offMsg').textContent = cancelDl ? 'Cancelled.' : (fail ? `Finished with ${fail} failed tiles. You can run it again to retry.` : 'Done. This area is now available offline.');
+    refreshOffline();
+  }
+
+  // ---------- create mode ----------
+  let draft = [];             // {name, lat, lon}; ids are assigned by position
+  let createMarkers = [];
+
+  const draftPoints = () => draft.map((p, i) => ({ id: i + 1, name: p.name, lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6) }));
+  function draftJSON() {
+    return JSON.stringify({ name: $('cname').value.trim() || 'Untitled course', points: draftPoints() }, null, 2) + '\n';
+  }
+  function setMode(m) {
+    mode = m;
+    const create = m === 'create';
+    $('toolbar').classList.toggle('hidden', create);
+    $('panel').classList.toggle('hidden', create);
+    $('ctoolbar').classList.toggle('hidden', !create);
+    $('cpanel').classList.toggle('hidden', !create);
+    $('cross').classList.toggle('hidden', !create);
+    setTimeout(() => map.invalidateSize(), 50);
+  }
+  function enterCreate() {
+    draft = course ? course.map(p => ({ name: p.name, lat: p.lat, lon: p.lon })) : [];
+    $('cname').value = courseName || '';
+    clearHelp();
+    map.removeLayer(courseLayer); map.removeLayer(helpLayer);
+    createLayer.addTo(map);
+    setMode('create');
+    createRender();
+    if (draft.length) map.fitBounds(L.latLngBounds(draft.map(p => [p.lat, p.lon])), { padding: [50, 50], maxZoom: 16 });
+  }
+  function leaveCreate() {
+    map.removeLayer(createLayer);
+    courseLayer.addTo(map); helpLayer.addTo(map);
+    setMode('play');
+  }
+  function createRender() {
+    createLayer.clearLayers(); createMarkers = [];
+    if (draft.length > 1) L.polyline(draft.map(p => [p.lat, p.lon]), { color: '#333', weight: 2, opacity: .7, dashArray: '4 7', interactive: false }).addTo(createLayer);
+    draft.forEach((p, i) => {
+      const m = L.marker([p.lat, p.lon], {
+        draggable: true,
+        icon: L.divIcon({ className: '', html: `<div class="cm">${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] })
+      }).addTo(createLayer);
+      m.bindTooltip(esc(p.name), { permanent: true, direction: 'right', offset: [14, 0], className: 'ptlabel' });
+      m.on('dragend', () => { const ll = m.getLatLng(); draft[i].lat = ll.lat; draft[i].lon = ll.lng; setTimeout(createRender, 0); });
+      createMarkers.push(m);
+    });
+    const list = $('clist'); list.innerHTML = '';
+    draft.forEach((p, i) => {
+      const row = document.createElement('div'); row.className = 'row';
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = i + 1;
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name;
+      nm.onclick = () => map.setView([p.lat, p.lon], Math.max(map.getZoom(), 16));
+      const mk = (txt, fn, dis) => { const b = document.createElement('button'); b.textContent = txt; b.disabled = !!dis; b.onclick = fn; return b; };
+      row.append(n, nm,
+        mk('✎', () => { const v = prompt(`Name for point ${i + 1}`, p.name); if (v !== null && v.trim()) { draft[i].name = v.trim(); createRender(); } }),
+        mk('↑', () => { [draft[i - 1], draft[i]] = [draft[i], draft[i - 1]]; createRender(); }, i === 0),
+        mk('↓', () => { [draft[i + 1], draft[i]] = [draft[i], draft[i + 1]]; createRender(); }, i === draft.length - 1),
+        mk('🗑', () => { draft.splice(i, 1); createRender(); }));
+      list.appendChild(row);
+    });
+    list.scrollTop = list.scrollHeight;
+  }
+  function addPoint(lat, lon) {
+    draft.push({ name: `Point ${draft.length + 1}`, lat, lon });
+    createRender();
+  }
+  map.on('click', e => { if (mode === 'create') addPoint(e.latlng.lat, e.latlng.lng); });
+
+  function oneFix() {
+    return new Promise((res, rej) => {
+      if (!('geolocation' in navigator)) return rej(new Error('no geolocation'));
+      navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    });
+  }
+  async function placeSearch() {
+    const q = $('q').value.trim(); if (!q) return;
+    try {
+      const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
+      const j = await r.json();
+      if (!j.length) { toast('Place not found.'); return; }
+      map.setView([+j[0].lat, +j[0].lon], 15);
+    } catch (e) { toast('Search needs an internet connection.'); }
+  }
+  function requireDraft() { if (!draft.length) { toast('Add at least one point first.'); return false; } return true; }
+  async function shareJSON() {
+    if (!requireDraft()) return;
+    const name = slug($('cname').value) + '.json';
+    const file = new File([draftJSON()], name, { type: 'application/json' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: $('cname').value || 'Course' }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    downloadBlob(draftJSON(), name, 'application/json');
+    toast('Sharing not supported here; saved to your downloads instead.');
+  }
+
+  // ---------- UI wiring ----------
+  $('file').addEventListener('change', e => {
+    const f = e.target.files[0]; if (!f) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      try { const c = parseCourse(JSON.parse(fr.result)); setCourse(c.name, c.pts); toast(`Loaded ${c.pts.length} points.`); }
+      catch (err) { toast('Could not load course: ' + err.message, 5500); }
+    };
+    fr.readAsText(f);
+    e.target.value = '';
+  });
+  $('sampleBtn').onclick = () => { const c = parseCourse(SAMPLE); setCourse(c.name, c.pts); toast('Sample course loaded.'); };
+  $('startBtn').onclick = start;
+  $('helpBtn').onclick = help;
+  $('splitsBtn').onclick = showSplits;
+  $('skipBtn').onclick = () => {
+    if (!course || finished()) return;
+    if (confirm(`Skip #${course[cur()].id} ${course[cur()].name}?`)) record(true);
+  };
+  $('resetBtn').onclick = () => {
+    if (!course) return;
+    if (confirm('Reset progress and the clock?')) {
+      run = { startedAt: started ? Date.now() : null, events: [] };
+      saveRun(); restyle(); updatePanel(); clearHelp();
+    }
+  };
+  $('csvBtn').onclick = () => downloadBlob(splitsCSV(), `${slug(courseName)}-splits.csv`, 'text/csv');
+  $('splitsClose').onclick = () => $('splitsDlg').close();
+
+  $('offBtn').onclick = openOffline;
+  $('coffBtn').onclick = openOffline;
+  $('offClose').onclick = () => { cancelDl = true; $('offDlg').close(); };
+  $('offGo').onclick = downloadTiles;
+  ['offArea', 'offPad', 'offZoom'].forEach(id => $(id).addEventListener('change', refreshOffline));
+  $('offClear').onclick = async () => {
+    if (!confirm('Delete all saved map tiles from this device?')) return;
+    try { await caches.delete(TILE_CACHE); } catch (e) {}
+    $('offMsg').textContent = 'Saved tiles cleared.'; refreshOffline();
+  };
+
+  $('createBtn').onclick = enterCreate;
+  $('exitBtn').onclick = () => { if (draft.length && !confirm('Leave without using the course? Unsaved changes will be lost.')) return; leaveCreate(); };
+  $('useBtn').onclick = () => {
+    if (!requireDraft()) return;
+    setCourse($('cname').value.trim() || 'Untitled course', draftPoints());
+    leaveCreate(); toast('Course ready. Tap Start when you are at the beginning.');
+  };
+  $('saveBtn').onclick = () => {
+    if (!requireDraft()) return;
+    downloadBlob(draftJSON(), slug($('cname').value) + '.json', 'application/json');
+    toast('Saved ' + slug($('cname').value) + '.json');
+  };
+  $('shareBtn').onclick = shareJSON;
+  $('crossBtn').onclick = () => { const c = map.getCenter(); addPoint(c.lat, c.lng); };
+  $('meBtn').onclick = async () => {
+    try { const p = await oneFix(); map.setView([p.coords.latitude, p.coords.longitude], 16); }
+    catch (e) { toast('Could not get your location.'); }
+  };
+  $('dropBtn').onclick = async () => {
+    toast('Getting your position…', 2000);
+    try { const p = await oneFix(); addPoint(p.coords.latitude, p.coords.longitude); map.setView([p.coords.latitude, p.coords.longitude], Math.max(map.getZoom(), 16)); toast(`Point dropped (GPS ±${Math.round(p.coords.accuracy)} m).`); }
+    catch (e) { toast('Could not get your location.'); }
+  };
+  $('qGo').onclick = placeSearch;
+  $('q').addEventListener('keydown', e => { if (e.key === 'Enter') placeSearch(); });
+
+  // ---------- restore last course ----------
+  try {
+    const last = JSON.parse(lsGet('cw-last'));
+    if (last && Array.isArray(last.points)) { const c = parseCourse(last); setCourse(c.name, c.pts); }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
